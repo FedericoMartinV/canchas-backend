@@ -1,10 +1,14 @@
 package canchas.service;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import canchas.exception.HorarioInvalidoException;
+import canchas.exception.ReservaSolapadaException;
 import canchas.model.Cancha;
 import canchas.model.Reserva;
 import canchas.model.Usuario;
@@ -42,17 +46,35 @@ public class ReservaService {
                 .orElseThrow(() -> new RuntimeException("Reserva no encontrada con ID: " + id));
     }
     
+    @Transactional
     public Reserva crear(String usuarioId, String canchaId, LocalDate fecha, 
                          String horaInicio, String horaFin) {
+        LocalTime inicio = LocalTime.parse(horaInicio);
+        LocalTime fin = LocalTime.parse(horaFin);
+
+        if (!fin.isAfter(inicio)) {
+            throw new HorarioInvalidoException("La hora de fin (" + horaFin + ") debe ser posterior a la hora de inicio (" + horaInicio + ")");
+        }
+
         Usuario usuario = usuarioService.obtenerPorId(usuarioId);
         Cancha cancha = canchaService.obtenerPorId(canchaId);
+
+        List<Reserva> reservasExistentes = reservaRepository.findByCanchaIdAndFecha(canchaId, fecha);
+
+        boolean solapada = reservasExistentes.stream()
+                .filter(r -> r.getEstado() != Reserva.EstadoReserva.CANCELADA)
+                .anyMatch(r -> haySolapamiento(inicio, fin, r.getHoraInicio(), r.getHoraFin()));
+
+        if (solapada) {
+            throw new ReservaSolapadaException("La cancha ya tiene una reserva activa que se solapa con el horario solicitado (" + horaInicio + " - " + horaFin + ")");
+        }
         
         Reserva reserva = new Reserva();
         reserva.setUsuario(usuario);
         reserva.setCancha(cancha);
         reserva.setFecha(fecha);
-        reserva.setHoraInicio(java.time.LocalTime.parse(horaInicio));
-        reserva.setHoraFin(java.time.LocalTime.parse(horaFin));
+        reserva.setHoraInicio(inicio);
+        reserva.setHoraFin(fin);
         reserva.setEstado(Reserva.EstadoReserva.PENDIENTE);
         
         // Agregar observadores
@@ -61,7 +83,13 @@ public class ReservaService {
         
         return reservaRepository.save(reserva);
     }
+
+    private boolean haySolapamiento(LocalTime inicioNueva, LocalTime finNueva,
+                                   LocalTime inicioExistente, LocalTime finExistente) {
+        return inicioNueva.isBefore(finExistente) && finNueva.isAfter(inicioExistente);
+    }
     
+    @Transactional
     public Reserva confirmarReserva(String id) {
         Reserva reserva = obtenerPorId(id);
         reserva.agregarObservador(usuarioNotificador);
@@ -70,6 +98,7 @@ public class ReservaService {
         return reservaRepository.save(reserva);
     }
     
+    @Transactional
     public Reserva cancelarReserva(String id) {
         Reserva reserva = obtenerPorId(id);
         reserva.agregarObservador(usuarioNotificador);
@@ -78,6 +107,7 @@ public class ReservaService {
         return reservaRepository.save(reserva);
     }
     
+    @Transactional
     public void eliminar(String id) {
         reservaRepository.deleteById(id);
     }
