@@ -4,6 +4,7 @@ import java.util.List;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -23,10 +24,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import canchas.dto.ReservaRequestDTO;
+import canchas.dto.ReservaResponseDTO;
 import canchas.model.Reserva;
 import canchas.service.ReservaService;
 
-@Tag(name = "Reservas", description = "GestiÃ³n de reservas de canchas. Confirmar o cancelar una reserva activa el patrÃ³n Observer, notificando al usuario y al administrador.")
+@Tag(name = "Reservas", description = "Gestión de reservas de canchas. Confirmar o cancelar una reserva activa el patrón Observer, notificando al usuario y al administrador.")
 @RestController
 @RequestMapping("/api/reservas")
 @CrossOrigin(origins = "*")
@@ -39,22 +41,39 @@ public class ReservaController {
     }
     
     @Operation(summary = "Listar todas las reservas", description = "Devuelve la lista completa de reservas registradas en el sistema.")
-    @ApiResponse(responseCode = "200", description = "Lista de reservas obtenida exitosamente")
+    @ApiResponse(
+        responseCode = "200",
+        description = "Lista de reservas obtenida exitosamente",
+        content = @Content(
+            mediaType = "application/json",
+            array = @ArraySchema(schema = @Schema(implementation = ReservaResponseDTO.class))
+        )
+    )
     @GetMapping
-    public ResponseEntity<List<Reserva>> obtenerTodas() {
-        return ResponseEntity.ok(reservaService.obtenerTodas());
+    public ResponseEntity<List<ReservaResponseDTO>> obtenerTodas() {
+        List<ReservaResponseDTO> response = reservaService.obtenerTodas().stream()
+                .map(ReservaResponseDTO::fromEntity)
+                .toList();
+        return ResponseEntity.ok(response);
     }
     
-    @Operation(summary = "Obtener reserva por ID", description = "Busca y devuelve una reserva especÃ­fica por su UUID.")
+    @Operation(summary = "Obtener reserva por ID", description = "Busca y devuelve una reserva específica por su UUID.")
     @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "Reserva encontrada"),
+        @ApiResponse(
+            responseCode = "200",
+            description = "Reserva encontrada",
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(implementation = ReservaResponseDTO.class)
+            )
+        ),
         @ApiResponse(responseCode = "404", description = "Reserva no encontrada", content = @Content)
     })
     @GetMapping("/{id}")
-    public ResponseEntity<Reserva> obtenerPorId(
+    public ResponseEntity<ReservaResponseDTO> obtenerPorId(
             @Parameter(description = "UUID de la reserva", example = "a1b2c3d4-e5f6-7890-abcd-ef1234567890")
             @PathVariable String id) {
-        return ResponseEntity.ok(reservaService.obtenerPorId(id));
+        return ResponseEntity.ok(ReservaResponseDTO.fromEntity(reservaService.obtenerPorId(id)));
     }
     
     @Operation(
@@ -72,7 +91,7 @@ public class ReservaController {
                 mediaType = "application/json",
                 schema = @Schema(implementation = ReservaRequestDTO.class),
                 examples = @ExampleObject(
-                    name = "Ejemplo reserva fÃºtbol 5",
+                    name = "Ejemplo reserva fútbol 5",
                     summary = "Reserva de una hora en horario nocturno",
                     value = """
                         {
@@ -88,12 +107,19 @@ public class ReservaController {
         )
     )
     @ApiResponses({
-        @ApiResponse(responseCode = "201", description = "Reserva creada exitosamente"),
-        @ApiResponse(responseCode = "400", description = "Datos de entrada invÃ¡lidos", content = @Content),
+        @ApiResponse(
+            responseCode = "201",
+            description = "Reserva creada exitosamente",
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(implementation = ReservaResponseDTO.class)
+            )
+        ),
+        @ApiResponse(responseCode = "400", description = "Datos de entrada inválidos", content = @Content),
         @ApiResponse(responseCode = "404", description = "Usuario o cancha no encontrados", content = @Content)
     })
     @PostMapping
-    public ResponseEntity<Reserva> crear(@RequestBody ReservaRequestDTO request) {
+    public ResponseEntity<ReservaResponseDTO> crear(@RequestBody ReservaRequestDTO request) {
         Reserva reserva = reservaService.crear(
             request.getUsuarioId(),
             request.getCanchaId(),
@@ -101,37 +127,51 @@ public class ReservaController {
             request.getHoraInicio(),
             request.getHoraFin()
         );
-        return ResponseEntity.status(HttpStatus.CREATED).body(reserva);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ReservaResponseDTO.fromEntity(reserva));
     }
     
     @Operation(
         summary = "Confirmar reserva",
-        description = "Cambia el estado de la reserva a **CONFIRMADA**. Dispara el patrÃ³n Observer: notifica al usuario por email y registra la actividad para el administrador."
+        description = "Cambia el estado de la reserva a **CONFIRMADA**. Dispara el patrón Observer: notifica al usuario por email y registra la actividad para el administrador."
     )
     @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "Reserva confirmada y notificaciones enviadas"),
+        @ApiResponse(
+            responseCode = "200",
+            description = "Reserva confirmada y notificaciones enviadas",
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(implementation = ReservaResponseDTO.class)
+            )
+        ),
         @ApiResponse(responseCode = "404", description = "Reserva no encontrada", content = @Content)
     })
     @PatchMapping("/{id}/confirmar")
-    public ResponseEntity<Reserva> confirmar(
+    public ResponseEntity<ReservaResponseDTO> confirmar(
             @Parameter(description = "UUID de la reserva a confirmar", example = "a1b2c3d4-e5f6-7890-abcd-ef1234567890")
             @PathVariable String id) {
-        return ResponseEntity.ok(reservaService.confirmarReserva(id));
+        return ResponseEntity.ok(ReservaResponseDTO.fromEntity(reservaService.confirmarReserva(id)));
     }
     
     @Operation(
         summary = "Cancelar reserva",
-        description = "Cambia el estado de la reserva a **CANCELADA**. Dispara el patrÃ³n Observer: notifica al usuario por email y registra la actividad para el administrador."
+        description = "Cambia el estado de la reserva a **CANCELADA**. Dispara el patrón Observer: notifica al usuario por email y registra la actividad para el administrador."
     )
     @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "Reserva cancelada y notificaciones enviadas"),
+        @ApiResponse(
+            responseCode = "200",
+            description = "Reserva cancelada y notificaciones enviadas",
+            content = @Content(
+                mediaType = "application/json",
+                schema = @Schema(implementation = ReservaResponseDTO.class)
+            )
+        ),
         @ApiResponse(responseCode = "404", description = "Reserva no encontrada", content = @Content)
     })
     @PatchMapping("/{id}/cancelar")
-    public ResponseEntity<Reserva> cancelar(
+    public ResponseEntity<ReservaResponseDTO> cancelar(
             @Parameter(description = "UUID de la reserva a cancelar", example = "a1b2c3d4-e5f6-7890-abcd-ef1234567890")
             @PathVariable String id) {
-        return ResponseEntity.ok(reservaService.cancelarReserva(id));
+        return ResponseEntity.ok(ReservaResponseDTO.fromEntity(reservaService.cancelarReserva(id)));
     }
     
     @Operation(summary = "Eliminar reserva", description = "Elimina permanentemente una reserva por su UUID.")
@@ -147,27 +187,47 @@ public class ReservaController {
         return ResponseEntity.noContent().build();
     }
     
-    @Operation(summary = "Listar reservas por usuario", description = "Devuelve todas las reservas asociadas a un usuario especÃ­fico.")
+    @Operation(summary = "Listar reservas por usuario", description = "Devuelve todas las reservas asociadas a un usuario específico.")
     @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "Lista de reservas del usuario"),
+        @ApiResponse(
+            responseCode = "200",
+            description = "Lista de reservas del usuario",
+            content = @Content(
+                mediaType = "application/json",
+                array = @ArraySchema(schema = @Schema(implementation = ReservaResponseDTO.class))
+            )
+        ),
         @ApiResponse(responseCode = "404", description = "Usuario no encontrado", content = @Content)
     })
     @GetMapping("/usuario/{usuarioId}")
-    public ResponseEntity<List<Reserva>> obtenerPorUsuario(
+    public ResponseEntity<List<ReservaResponseDTO>> obtenerPorUsuario(
             @Parameter(description = "UUID del usuario", example = "a1b2c3d4-e5f6-7890-abcd-ef1234567890")
             @PathVariable String usuarioId) {
-        return ResponseEntity.ok(reservaService.obtenerPorUsuario(usuarioId));
+        List<ReservaResponseDTO> response = reservaService.obtenerPorUsuario(usuarioId).stream()
+                .map(ReservaResponseDTO::fromEntity)
+                .toList();
+        return ResponseEntity.ok(response);
     }
     
-    @Operation(summary = "Listar reservas por cancha", description = "Devuelve todas las reservas registradas para una cancha especÃ­fica.")
+    @Operation(summary = "Listar reservas por cancha", description = "Devuelve todas las reservas registradas para una cancha específica.")
     @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "Lista de reservas de la cancha"),
+        @ApiResponse(
+            responseCode = "200",
+            description = "Lista de reservas de la cancha",
+            content = @Content(
+                mediaType = "application/json",
+                array = @ArraySchema(schema = @Schema(implementation = ReservaResponseDTO.class))
+            )
+        ),
         @ApiResponse(responseCode = "404", description = "Cancha no encontrada", content = @Content)
     })
     @GetMapping("/cancha/{canchaId}")
-    public ResponseEntity<List<Reserva>> obtenerPorCancha(
+    public ResponseEntity<List<ReservaResponseDTO>> obtenerPorCancha(
             @Parameter(description = "UUID de la cancha", example = "b2c3d4e5-f6a7-8901-bcde-f12345678901")
             @PathVariable String canchaId) {
-        return ResponseEntity.ok(reservaService.obtenerPorCancha(canchaId));
+        List<ReservaResponseDTO> response = reservaService.obtenerPorCancha(canchaId).stream()
+                .map(ReservaResponseDTO::fromEntity)
+                .toList();
+        return ResponseEntity.ok(response);
     }
 }

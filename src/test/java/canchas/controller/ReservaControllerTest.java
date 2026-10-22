@@ -3,12 +3,15 @@ package canchas.controller;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -45,6 +48,9 @@ class ReservaControllerTest {
     @InjectMocks
     private ReservaController reservaController;
 
+    private Usuario usuarioMock;
+    private Cancha canchaMock;
+
     @BeforeEach
     void setUp() {
         ObjectMapper objectMapper = new ObjectMapper();
@@ -55,6 +61,21 @@ class ReservaControllerTest {
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))
                 .build();
+
+        usuarioMock = new Usuario("usr-1", "Carlos", "Rodriguez", "carlos@example.com", "261-1234567");
+        canchaMock = new Cancha("cancha-1", "Cancha Central", "Av. San Martin 500", "Futbol 5", 15000.0, true);
+    }
+
+    private Reserva crearReservaMock(String id, Reserva.EstadoReserva estado) {
+        Reserva reserva = new Reserva();
+        reserva.setId(id);
+        reserva.setUsuario(usuarioMock);
+        reserva.setCancha(canchaMock);
+        reserva.setFecha(LocalDate.of(2026, 10, 15));
+        reserva.setHoraInicio(LocalTime.of(11, 0));
+        reserva.setHoraFin(LocalTime.of(12, 0));
+        reserva.setEstado(estado);
+        return reserva;
     }
 
     @Test
@@ -108,14 +129,9 @@ class ReservaControllerTest {
     }
 
     @Test
-    @DisplayName("Criterio: POST de reserva válida (o adyacente) retorna 201 CREATED")
+    @DisplayName("Criterio: POST de reserva válida retorna 201 CREATED con ReservaResponseDTO y sin observadores")
     void testCrearReservaValida_RetornaCreated() throws Exception {
-        Reserva reserva = new Reserva();
-        reserva.setId("res-1");
-        reserva.setFecha(LocalDate.of(2026, 10, 15));
-        reserva.setHoraInicio(LocalTime.of(11, 0));
-        reserva.setHoraFin(LocalTime.of(12, 0));
-        reserva.setEstado(Reserva.EstadoReserva.PENDIENTE);
+        Reserva reserva = crearReservaMock("res-1", Reserva.EstadoReserva.PENDIENTE);
 
         when(reservaService.crear(eq("usr-1"), eq("cancha-1"), any(LocalDate.class), eq("11:00"), eq("12:00")))
                 .thenReturn(reserva);
@@ -136,7 +152,78 @@ class ReservaControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value("res-1"))
                 .andExpect(jsonPath("$.estado").value("PENDIENTE"))
+                .andExpect(jsonPath("$.fecha").value("2026-10-15"))
                 .andExpect(jsonPath("$.horaInicio").value("11:00:00"))
-                .andExpect(jsonPath("$.horaFin").value("12:00:00"));
+                .andExpect(jsonPath("$.horaFin").value("12:00:00"))
+                .andExpect(jsonPath("$.usuario.id").value("usr-1"))
+                .andExpect(jsonPath("$.usuario.nombre").value("Carlos"))
+                .andExpect(jsonPath("$.usuario.email").value("carlos@example.com"))
+                .andExpect(jsonPath("$.cancha.id").value("cancha-1"))
+                .andExpect(jsonPath("$.cancha.nombre").value("Cancha Central"))
+                .andExpect(jsonPath("$.cancha.tipo").value("Futbol 5"))
+                .andExpect(jsonPath("$.cancha.precioPorHora").value(15000.0))
+                .andExpect(jsonPath("$.observadores").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("Criterio: GET /api/reservas devuelve lista de ReservaResponseDTO sin observadores")
+    void testObtenerTodas_RetornaListaDTO() throws Exception {
+        when(reservaService.obtenerTodas()).thenReturn(List.of(crearReservaMock("res-1", Reserva.EstadoReserva.CONFIRMADA)));
+
+        mockMvc.perform(get("/api/reservas"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value("res-1"))
+                .andExpect(jsonPath("$[0].estado").value("CONFIRMADA"))
+                .andExpect(jsonPath("$[0].usuario.id").value("usr-1"))
+                .andExpect(jsonPath("$[0].cancha.id").value("cancha-1"))
+                .andExpect(jsonPath("$[0].observadores").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("Criterio: PATCH /api/reservas/{id}/confirmar devuelve DTO con estado CONFIRMADA")
+    void testConfirmarReserva_RetornaDTOActualizado() throws Exception {
+        Reserva confirmada = crearReservaMock("res-1", Reserva.EstadoReserva.CONFIRMADA);
+        when(reservaService.confirmarReserva("res-1")).thenReturn(confirmada);
+
+        mockMvc.perform(patch("/api/reservas/res-1/confirmar"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value("res-1"))
+                .andExpect(jsonPath("$.estado").value("CONFIRMADA"))
+                .andExpect(jsonPath("$.observadores").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("Criterio: PATCH /api/reservas/{id}/cancelar devuelve DTO con estado CANCELADA")
+    void testCancelarReserva_RetornaDTOActualizado() throws Exception {
+        Reserva cancelada = crearReservaMock("res-1", Reserva.EstadoReserva.CANCELADA);
+        when(reservaService.cancelarReserva("res-1")).thenReturn(cancelada);
+
+        mockMvc.perform(patch("/api/reservas/res-1/cancelar"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value("res-1"))
+                .andExpect(jsonPath("$.estado").value("CANCELADA"))
+                .andExpect(jsonPath("$.observadores").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("Criterio: GET /api/reservas/usuario/{id} devuelve lista de DTOs")
+    void testObtenerPorUsuario_RetornaListaDTO() throws Exception {
+        when(reservaService.obtenerPorUsuario("usr-1")).thenReturn(List.of(crearReservaMock("res-1", Reserva.EstadoReserva.PENDIENTE)));
+
+        mockMvc.perform(get("/api/reservas/usuario/usr-1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value("res-1"))
+                .andExpect(jsonPath("$[0].observadores").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("Criterio: GET /api/reservas/cancha/{id} devuelve lista de DTOs")
+    void testObtenerPorCancha_RetornaListaDTO() throws Exception {
+        when(reservaService.obtenerPorCancha("cancha-1")).thenReturn(List.of(crearReservaMock("res-1", Reserva.EstadoReserva.PENDIENTE)));
+
+        mockMvc.perform(get("/api/reservas/cancha/cancha-1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value("res-1"))
+                .andExpect(jsonPath("$[0].observadores").doesNotExist());
     }
 }
